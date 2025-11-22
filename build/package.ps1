@@ -10,9 +10,23 @@ $zipPath = Join-Path $parentPath $zipName
 
 Write-Host "Packaging plugin from: $pluginPath"
 
-# Exclude common dev/artifact folders and files
+# Exclude non-install folders and files (keep vendor included)
 $excludeDirs = @('build', 'node_modules', '.git', '.github', 'tests')
-$excludeFiles = @('.phpunit.result.cache')
+$excludeFiles = @(
+  '.gitattributes',
+  '.gitignore',
+  '.phpunit.result.cache',
+  'composer.json',
+  'composer.lock',
+  'package.json',
+  'package-lock.json',
+  'phpunit.xml',
+  'webpack.config.js',
+  'GOOGLE_SHEETS.md',
+  'IMPROVEMENTS.md',
+  'INSTALLATION.md',
+  'SECURITY.md'
+)
 
 # Gather all files except excluded dirs/files
 $allItems = Get-ChildItem -Path $pluginPath -Recurse -Force -File | Where-Object {
