@@ -1,0 +1,48 @@
+name: Build and Release ZIP
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          npm install --no-audit --no-fund
+
+      - name: Build assets
+        run: |
+          node node_modules/webpack/bin/webpack.js --mode production
+
+      - name: Create clean ZIP from tag
+        shell: bash
+        run: |
+          TAG_NAME="${GITHUB_REF##*/}"
+          ZIP_NAME="seo-page-monitor-${TAG_NAME}.zip"
+          # Use .gitattributes export-ignore to create lean archive
+          git archive --format zip --output "$ZIP_NAME" "$TAG_NAME"
+          ls -lah "$ZIP_NAME"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: |
+            seo-page-monitor-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
