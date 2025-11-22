@@ -77,6 +77,13 @@ GPL v2 or later
 
 ## Changelog
 
+### 1.0.1
+- Admin: Google Sheets readiness notices on Settings
+- Sheets: Header-aware writes (align to header order when enabled)
+- Sheets: Optional hard row deletion (fallback to clear if sheetId unavailable)
+- Security: Safer defaults for fetch (sslverify/reject_unsafe_urls) with DEV override
+- Packaging: Lean zips via scripts and .gitattributes; GitHub Actions release workflow
+
 ### 1.0.0
 - Initial release
 - Page monitoring and tracking
