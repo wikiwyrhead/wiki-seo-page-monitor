@@ -37,11 +37,37 @@ jobs:
           git archive --format zip --output "$ZIP_NAME" "$TAG_NAME"
           ls -lah "$ZIP_NAME"
 
+      - name: Extract changelog section from README
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${GITHUB_REF##*/}"
+          VER_NO_V="${TAG_NAME#v}"
+          BODY_FILE="RELEASE_BODY.md"
+          # Extract lines between "### <version>" and next "###" or EOF
+          awk -v ver="$VER_NO_V" '
+            BEGIN{found=0}
+            /^###[[:space:]]+/{
+              if(found==1){exit}
+              if($0 ~ "^###[[:space:]]+" ver "$"){found=1; print}
+              next
+            }
+            { if(found==1) print }
+          ' README.md > "$BODY_FILE" || true
+          # If empty, write a fallback body
+          if [ ! -s "$BODY_FILE" ]; then
+            printf "Automated release for %s.\nSee README.md for changelog details." "$TAG_NAME" > "$BODY_FILE"
+          fi
+          echo "body_path=$BODY_FILE" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body_path: ${{ steps.changelog.outputs.body_path }}
           files: |
             seo-page-monitor-${{ github.ref_name }}.zip
         env:
