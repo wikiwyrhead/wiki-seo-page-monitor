@@ -3,7 +3,7 @@
  * Plugin Name: SEO Page Monitor & Optimizer
  * Plugin URI: https://github.com/wikiwyrhead/wiki-seo-page-monitor
  * Description: Track and monitor SEO rankings, PageSpeed scores, and optimization tasks for your pages
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: arnelG
  * Author URI: https://github.com/wikiwyrhead
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('SEO_MONITOR_VERSION', '1.0.0');
+define('SEO_MONITOR_VERSION', '1.2.0');
 define('SEO_MONITOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SEO_MONITOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -65,13 +65,23 @@ class SEO_Page_Monitor {
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename=' . $filename);
         header('Pragma: no-cache');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Cache-Control: post-check=0, pre-check=0', false);
 
         // UTF-8 BOM for Excel
         echo "\xEF\xBB\xBF";
 
         $out = fopen('php://output', 'w');
-        // Header row
-        fputcsv($out, array('URL','Title','Description','Focus Keyword','RankMath Score','Internal Links','External Links','Alt Images','Status','Notes'));
+        // If a single URL is requested, filter down
+        $single_url = isset($_REQUEST['url']) ? esc_url_raw($_REQUEST['url']) : '';
+        if (!empty($single_url)) {
+            $pages = array_values(array_filter($pages, function($row) use ($single_url) {
+                return isset($row['url']) && $row['url'] === $single_url;
+            }));
+        }
+
+        // Header row (include PageSpeed + Technical/Notes)
+        fputcsv($out, array('URL','Title','Description','Focus Keyword','RankMath Score','Internal Links','External Links','Alt Images','Status','PageSpeed Mobile','PageSpeed Desktop','Technical','Notes'));
 
         foreach ($pages as $p) {
             $url = isset($p['url']) ? $this->sanitize_csv($p['url']) : '';
@@ -83,17 +93,372 @@ class SEO_Page_Monitor {
             $el = isset($p['externalLinks']) ? $this->sanitize_csv($p['externalLinks']) : '';
             $ai = isset($p['altImages']) ? $this->sanitize_csv($p['altImages']) : '';
             $status = isset($p['priority']) ? $this->sanitize_csv($p['priority']) : (isset($p['status']) ? $this->sanitize_csv($p['status']) : '');
+            $psm = isset($p['pageSpeedMobile']) ? $this->sanitize_csv($p['pageSpeedMobile']) : '';
+            $psd = isset($p['pageSpeedDesktop']) ? $this->sanitize_csv($p['pageSpeedDesktop']) : '';
+            $tech = '';
+            if (isset($p['onPageActions'])) {
+                $tech = is_array($p['onPageActions']) ? implode("; ", array_map(array($this,'sanitize_csv'), $p['onPageActions'])) : $this->sanitize_csv($p['onPageActions']);
+            }
             $notes = '';
             if (isset($p['nextActions']) && is_array($p['nextActions'])) {
                 $notes = implode("; ", array_map(array($this,'sanitize_csv'), $p['nextActions']));
             } elseif (isset($p['recommendations']) && is_array($p['recommendations'])) {
                 $notes = implode("; ", array_map(array($this,'sanitize_csv'), $p['recommendations']));
             }
-            fputcsv($out, array($url,$title,$desc,$fk,$score,$il,$el,$ai,$status,$notes));
+            fputcsv($out, array($url,$title,$desc,$fk,$score,$il,$el,$ai,$status,$psm,$psd,$tech,$notes));
         }
 
         fclose($out);
         exit;
+    }
+
+    /**
+     * Handle XLSX export with multiple sheets (Overview, Technical, PageSpeed)
+     */
+    public function handle_export_xlsx() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        // Reuse the same nonce as CSV export exposed to JS
+        check_admin_referer('seo_monitor_export_csv');
+
+        if (!class_exists('PhpOffice\\PhpSpreadsheet\\Spreadsheet')) {
+            wp_die('Excel export unavailable: PhpSpreadsheet is not installed. Please run composer require phpoffice/phpspreadsheet in the plugin directory.');
+        }
+
+        $pages = get_option('seo_monitor_pages', array());
+        if (!is_array($pages)) $pages = array();
+        // Optional single URL filter
+        $single_url = isset($_REQUEST['url']) ? esc_url_raw($_REQUEST['url']) : '';
+        if (!empty($single_url)) {
+            $pages = array_values(array_filter($pages, function($row) use ($single_url) {
+                return isset($row['url']) && $row['url'] === $single_url;
+            }));
+        }
+
+        // Build spreadsheet with shared formatter
+        $spreadsheet = $this->build_xlsx_workbook($pages);
+        // Ensure Overview is the active sheet
+        if (method_exists($spreadsheet, 'setActiveSheetIndex')) {
+            $spreadsheet->setActiveSheetIndex(0);
+        }
+
+        // Output
+        $filename = 'seo-page-monitor-' . date('Ymd-His') . '.xlsx';
+        nocache_headers();
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        header('Pragma: no-cache');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Cache-Control: post-check=0, pre-check=0', false);
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        exit;
+    }
+
+    /**
+     * Build a consistent XLSX workbook for both global and per-page export.
+     * Sheets: Overview, Technical, PageSpeed.
+     * Overview includes Actions Completed, SEO Recommendations, Next Actions.
+     *
+     * @param array $pages
+     * @return \PhpOffice\PhpSpreadsheet\Spreadsheet
+     */
+    private function build_xlsx_workbook($pages) {
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $spreadsheet->getProperties()->setCreator('SEO Page Monitor')->setTitle('SEO Monitor Export');
+
+        // Overview sheet (visual order similar to UI)
+        $overview = $spreadsheet->getActiveSheet();
+        $overview->setTitle('Overview');
+        $overview->fromArray(array(array(
+            'URL',
+            'Title',
+            'Description',
+            'Focus Keyword',
+            'Search Volume',
+            'Ranking',
+            'RankMath Score',
+            'Priority',
+            'Actions Completed',
+            'SEO Recommendations',
+            'Next Actions'
+        )));
+        $row = 2;
+        foreach ($pages as $p) {
+            // Actions Completed -> bullet list with icons
+            $actionsCompleted = '';
+            if (isset($p['onPageActions'])) {
+                if (is_array($p['onPageActions'])) {
+                    $actsArr = array();
+                    foreach ($p['onPageActions'] as $it) {
+                        foreach ($this->split_items((string)$it) as $sp) { $actsArr[] = $sp; }
+                    }
+                    $actsArr = array_filter(array_map('strval', $actsArr));
+                } else {
+                    $actsArr = $this->split_items((string)$p['onPageActions']);
+                }
+                $actsArr = array_map(function($s){ return $this->iconize_item($s); }, $actsArr);
+                $actionsCompleted = !empty($actsArr) ? implode("\n", $actsArr) : '';
+            }
+            $recommendations = '';
+            if (isset($p['recommendations'])) {
+                // Convert to bullet list using robust splitter
+                if (is_array($p['recommendations'])) {
+                    $recsArr = array();
+                    foreach ($p['recommendations'] as $it) {
+                        foreach ($this->split_items((string)$it) as $sp) { $recsArr[] = $sp; }
+                    }
+                    $recsArr = array_filter(array_map('strval', $recsArr));
+                } else {
+                    $recsArr = $this->split_items((string)$p['recommendations']);
+                }
+                $recsArr = array_map(function($s){ return $this->iconize_item($s); }, $recsArr);
+                $recommendations = !empty($recsArr) ? implode("\n", $recsArr) : '';
+            }
+            $nextActions = '';
+            if (isset($p['nextActions'])) {
+                if (is_array($p['nextActions'])) {
+                    $nxtArr = array();
+                    foreach ($p['nextActions'] as $it) {
+                        foreach ($this->split_items((string)$it) as $sp) { $nxtArr[] = $sp; }
+                    }
+                    $nxtArr = array_filter(array_map('strval', $nxtArr));
+                } else {
+                    $nxtArr = $this->split_items((string)$p['nextActions']);
+                }
+                $nxtArr = array_map(function($s){ return $this->iconize_item($s); }, $nxtArr);
+                $nextActions = !empty($nxtArr) ? implode("\n", $nxtArr) : '';
+            }
+
+            // Write scalar cells via fromArray for A–H
+            $overview->fromArray(array(array(
+                isset($p['url']) ? (string)$p['url'] : '',
+                isset($p['title']) ? (string)$p['title'] : '',
+                isset($p['description']) ? (string)$p['description'] : '',
+                isset($p['focusKeyword']) ? (string)$p['focusKeyword'] : '',
+                isset($p['searchVolume']) ? (string)$p['searchVolume'] : '',
+                isset($p['ranking']) ? (string)$p['ranking'] : '',
+                isset($p['rankMathScore']) ? (string)$p['rankMathScore'] : '',
+                isset($p['priority']) ? (string)$p['priority'] : (isset($p['status']) ? (string)$p['status'] : ''),
+            )), null, 'A' . $row);
+            // Normalize to LF newlines (Excel recognizes "\n") and set as plain strings
+            $acVal = str_replace(["\r\n","\r"], "\n", $actionsCompleted);
+            $reVal = str_replace(["\r\n","\r"], "\n", $recommendations);
+            $nxVal = str_replace(["\r\n","\r"], "\n", $nextActions);
+            $overview->setCellValue('I' . $row, $acVal);
+            $overview->setCellValue('J' . $row, $reVal);
+            $overview->setCellValue('K' . $row, $nxVal);
+            $overview->getStyle('I' . $row . ':K' . $row)->getAlignment()->setWrapText(true)->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP)->setIndent(1);
+            $row++;
+        }
+
+        // Styling for Overview
+        $lastRow = $row - 1;
+        if ($lastRow >= 1) {
+            // Header style: green fill, bold white text
+            $overview->getStyle('A1:K1')->applyFromArray(array(
+                'font' => array('bold' => true, 'color' => array('rgb' => 'FFFFFF')),
+                'fill' => array('fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => array('rgb' => '33CC66')),
+                'alignment' => array('horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER)
+            ));
+            // Freeze header & enable autofilter
+            $overview->freezePane('A2');
+            $overview->setAutoFilter('A1:K1');
+            // Column widths
+            foreach (range('A','H') as $col) { $overview->getColumnDimension($col)->setAutoSize(true); }
+            $overview->getColumnDimension('I')->setWidth(70);
+            $overview->getColumnDimension('J')->setWidth(90);
+            $overview->getColumnDimension('K')->setWidth(90);
+            // Wrap long text and top align (redundant per-row and per-column to ensure Excel honors it)
+            $overview->getStyle('A2:K' . $lastRow)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP)->setWrapText(true);
+            $overview->getStyle('I2:I' . $lastRow)->getAlignment()->setWrapText(true);
+            $overview->getStyle('J2:J' . $lastRow)->getAlignment()->setWrapText(true);
+            $overview->getStyle('K2:K' . $lastRow)->getAlignment()->setWrapText(true);
+            // Ensure auto row height so line breaks display
+            for ($r = 2; $r <= $lastRow; $r++) {
+                $overview->getRowDimension($r)->setRowHeight(-1);
+            }
+            // Thin borders around cells
+            $overview->getStyle('A1:K' . $lastRow)->applyFromArray(array(
+                'borders' => array('allBorders' => array('borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => array('rgb' => 'CCCCCC')))
+            ));
+            // Hyperlink style for URL column
+            for ($r = 2; $r <= $lastRow; $r++) {
+                $cell = $overview->getCell('A' . $r);
+                $urlVal = $cell->getValue();
+                if (!empty($urlVal)) {
+                    $cell->getHyperlink()->setUrl($urlVal);
+                    $overview->getStyle('A' . $r)->applyFromArray(array('font' => array('color' => array('rgb' => '0563C1'), 'underline' => true)));
+                }
+            }
+
+            // Conditional formatting: Ranking (F)
+            $condGreen = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $condGreen->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_CONTAINSTEXT)
+                ->setText('#')
+                ->getStyle()->getFont()->getColor()->setRGB('006100');
+            $condYellow = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $condYellow->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_CONTAINSTEXT)
+                ->setText('#1') // generic; detailed numeric rules are complex with text; keep subtle styling
+                ->getStyle()->getFont()->getColor()->setRGB('9C5700');
+            $condRed = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $condRed->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_CONTAINSTEXT)
+                ->setText('Not ranking')
+                ->getStyle()->getFont()->getColor()->setRGB('9C0006');
+            $overview->getStyle('F2:F' . $lastRow)->setConditionalStyles(array($condRed, $condGreen));
+
+            // Conditional: RankMath Score (G)
+            $c1 = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $c1->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS)
+                ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_GREATERTHANOREQUAL)
+                ->addCondition('80')
+                ->getStyle()->getFont()->getColor()->setRGB('006100');
+            $c2 = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $c2->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS)
+                ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_BETWEEN)
+                ->addCondition('50')->addCondition('79')
+                ->getStyle()->getFont()->getColor()->setRGB('9C5700');
+            $c3 = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $c3->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS)
+                ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_LESSTHAN)
+                ->addCondition('50')
+                ->getStyle()->getFont()->getColor()->setRGB('9C0006');
+            $overview->getStyle('G2:G' . $lastRow)->setConditionalStyles(array($c1, $c2, $c3));
+
+            // Conditional: Priority (H)
+            $pCrit = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $pCrit->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setText('Critical');
+            $pCrit->getStyle()->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setRGB('FF0000');
+            $pCrit->getStyle()->getFont()->getColor()->setRGB('FFFFFF');
+            $pHigh = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $pHigh->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setText('High');
+            $pHigh->getStyle()->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setRGB('FFA500');
+            $pMed = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $pMed->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setText('Medium');
+            $pMed->getStyle()->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setRGB('FFD966');
+            $pLow = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+            $pLow->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CONTAINSTEXT)
+                ->setText('Low');
+            $pLow->getStyle()->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setRGB('70AD47');
+            $pLow->getStyle()->getFont()->getColor()->setRGB('FFFFFF');
+            $overview->getStyle('H2:H' . $lastRow)->setConditionalStyles(array($pCrit, $pHigh, $pMed, $pLow));
+        }
+
+        // Technical sheet
+        $technical = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'Technical');
+        $spreadsheet->addSheet($technical, 1);
+        $technical->fromArray(array(array('URL','Internal Links','External Links','Alt Images','Actions Completed')));
+        $row = 2;
+        foreach ($pages as $p) {
+            $actions = '';
+            if (isset($p['onPageActions'])) {
+                $actions = is_array($p['onPageActions']) ? implode('; ', array_filter(array_map('strval', $p['onPageActions']))) : (string)$p['onPageActions'];
+            }
+            $technical->fromArray(array(array(
+                isset($p['url']) ? (string)$p['url'] : '',
+                isset($p['internalLinks']) ? (string)$p['internalLinks'] : '',
+                isset($p['externalLinks']) ? (string)$p['externalLinks'] : '',
+                isset($p['altImages']) ? (string)$p['altImages'] : '',
+                $actions,
+            )), null, 'A' . $row);
+            $row++;
+        }
+        // Styling for Technical
+        $lastTech = $row - 1;
+        if ($lastTech >= 1) {
+            $technical->getStyle('A1:E1')->applyFromArray(array(
+                'font' => array('bold' => true, 'color' => array('rgb' => 'FFFFFF')),
+                'fill' => array('fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => array('rgb' => '33CC66')),
+                'alignment' => array('horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER)
+            ));
+            $technical->freezePane('A2');
+            $technical->setAutoFilter('A1:E1');
+            $technical->getStyle('A2:E' . $lastTech)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP)->setWrapText(true);
+            foreach (['A'=>'auto','B'=>16,'C'=>16,'D'=>18,'E'=>60] as $col=>$w) {
+                if ($w === 'auto') { $technical->getColumnDimension($col)->setAutoSize(true); } else { $technical->getColumnDimension($col)->setWidth($w); }
+            }
+            $technical->getStyle('A1:E' . $lastTech)->applyFromArray(array(
+                'borders' => array('allBorders' => array('borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => array('rgb' => 'CCCCCC')))
+            ));
+            for ($r = 2; $r <= $lastTech; $r++) {
+                $cell = $technical->getCell('A' . $r);
+                $urlVal = $cell->getValue();
+                if (!empty($urlVal)) {
+                    $cell->getHyperlink()->setUrl($urlVal);
+                    $technical->getStyle('A' . $r)->applyFromArray(array('font' => array('color' => array('rgb' => '0563C1'), 'underline' => true)));
+                }
+            }
+        }
+
+        // PageSpeed sheet
+        $perf = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'PageSpeed');
+        $spreadsheet->addSheet($perf, 2);
+        $perf->fromArray(array(array('URL','Mobile Score','Desktop Score')));
+        $row = 2;
+        foreach ($pages as $p) {
+            $perf->fromArray(array(array(
+                isset($p['url']) ? (string)$p['url'] : '',
+                isset($p['pageSpeedMobile']) ? (string)$p['pageSpeedMobile'] : '',
+                isset($p['pageSpeedDesktop']) ? (string)$p['pageSpeedDesktop'] : '',
+            )), null, 'A' . $row);
+            $row++;
+        }
+        // Styling for PageSpeed
+        $lastPerf = $row - 1;
+        if ($lastPerf >= 1) {
+            $perf->getStyle('A1:C1')->applyFromArray(array(
+                'font' => array('bold' => true, 'color' => array('rgb' => 'FFFFFF')),
+                'fill' => array('fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => array('rgb' => '33CC66')),
+                'alignment' => array('horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER)
+            ));
+            $perf->freezePane('A2');
+            $perf->setAutoFilter('A1:C1');
+            foreach (['A'=>'auto','B'=>14,'C'=>14] as $col=>$w) {
+                if ($w === 'auto') { $perf->getColumnDimension($col)->setAutoSize(true); } else { $perf->getColumnDimension($col)->setWidth($w); }
+            }
+            $perf->getStyle('A2:C' . $lastPerf)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+            $perf->getStyle('A1:C' . $lastPerf)->applyFromArray(array(
+                'borders' => array('allBorders' => array('borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => array('rgb' => 'CCCCCC')))
+            ));
+            for ($r = 2; $r <= $lastPerf; $r++) {
+                $cell = $perf->getCell('A' . $r);
+                $urlVal = $cell->getValue();
+                if (!empty($urlVal)) {
+                    $cell->getHyperlink()->setUrl($urlVal);
+                    $perf->getStyle('A' . $r)->applyFromArray(array('font' => array('color' => array('rgb' => '0563C1'), 'underline' => true)));
+                }
+            }
+
+            // Conditional for scores (B and C)
+            foreach (['B','C'] as $col) {
+                $ok = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+                $ok->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS)
+                    ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_GREATERTHANOREQUAL)
+                    ->addCondition('90')
+                    ->getStyle()->getFont()->getColor()->setRGB('006100');
+                $mid = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+                $mid->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS)
+                    ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_BETWEEN)
+                    ->addCondition('50')->addCondition('89')
+                    ->getStyle()->getFont()->getColor()->setRGB('9C5700');
+                $bad = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+                $bad->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS)
+                    ->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_LESSTHAN)
+                    ->addCondition('50')
+                    ->getStyle()->getFont()->getColor()->setRGB('9C0006');
+                $perf->getStyle($col . '2:' . $col . $lastPerf)->setConditionalStyles(array($ok, $mid, $bad));
+            }
+        }
+
+        return $spreadsheet;
     }
 
     /**
@@ -107,6 +472,93 @@ class SEO_Page_Monitor {
         }
         return $s;
     }
+
+    /**
+     * Split long text into items using newlines, pipes, emoji markers, or labeled sections.
+     * Mirrors client-side parseRecommendations behavior.
+     * @param string $text
+     * @return array
+     */
+    private function split_items($text) {
+        $text = trim((string)$text);
+        if ($text === '') return array();
+
+        // Helper to split a single chunk further by emoji and labels
+        $split_chunk = function($chunk) {
+            $chunk = trim((string)$chunk);
+            if ($chunk === '') return array();
+
+            // Normalize whitespace for specific pattern checks
+            $norm = trim(preg_replace('/\s+/', ' ', $chunk));
+            // Specific: Header Structure combined line => two items
+            if (preg_match('/^Header Structure:\s*H1\s*:?\s*(\d+)\s*H1\s*Content\s*:?\s*(.+)$/i', $norm, $m)) {
+                return array(
+                    trim('Header Structure: H1:' . $m[1]),
+                    trim('H1 Content: ' . $m[2])
+                );
+            }
+            if (preg_match('/^H1\s*:?\s*(\d+)\s*H1\s*Content\s*:?\s*(.+)$/i', $norm, $m)) {
+                return array(
+                    trim('H1:' . $m[1]),
+                    trim('H1 Content: ' . $m[2])
+                );
+            }
+
+            // Emoji markers (include common ones + 🤖 + ✖/❌/✔/✅) and dashboard-set icons like 🏗️ 📄 🌐 📊
+            $parts = preg_split('/(?=(?:📝|✅|✔|❌|✖|🔗|🖼|📱|⚡|📖|🎯|🔍|🔔|💡|⚠️|🔧|🟢|🟡|🔴|🤖|📑|🏗️|📄|🌐|📊))/u', $chunk, -1, PREG_SPLIT_NO_EMPTY);
+            if ($parts && count($parts) > 1) return array_map('trim', $parts);
+
+            // Generic emoji boundary fallback
+            $parts = preg_split('/(?=\p{Extended_Pictographic})/u', $chunk, -1, PREG_SPLIT_NO_EMPTY);
+            if ($parts && count($parts) > 1) return array_map('trim', $parts);
+
+            // Labeled blocks (includes technical labels)
+            $parts = preg_split('/(?=(?:TITLE:|META:|CONTENT:|LINKS:|IMAGES:|MOBILE:|SPEED:|READABILITY:|KEYWORD:|CTA:|SCHEMA:|Header Structure:|H1\s*:|H1\s*Content:|Robots:))/u', $chunk, -1, PREG_SPLIT_NO_EMPTY);
+            if ($parts && count($parts) > 1) return array_map('trim', $parts);
+
+            // Bullet chars and pipes
+            $parts = preg_split('/\s*[•\|]\s*/u', $chunk, -1, PREG_SPLIT_NO_EMPTY);
+            if ($parts && count($parts) > 1) return array_map('trim', $parts);
+
+            return array($chunk);
+        };
+
+        // First split by newlines, then further split each line and flatten
+        $lines = preg_split("/\r?\n/", $text, -1, PREG_SPLIT_NO_EMPTY);
+        if (!$lines) $lines = array($text);
+        $out = array();
+        foreach ($lines as $ln) {
+            $pieces = $split_chunk($ln);
+            foreach ($pieces as $p) {
+                $p = trim($p);
+                if ($p !== '') $out[] = $p;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Add an icon prefix based on simple heuristics. Mirrors dashboard iconize logic.
+     */
+    private function iconize_item($text) {
+        $t = trim((string)$text);
+        if ($t === '') return '';
+        if (preg_match('/^[\p{Extended_Pictographic}]/u', $t)) return $t; // already iconized with an emoji
+        $l = mb_strtolower($t, 'UTF-8');
+        if (preg_match('/missing|\bno\b|not found|set to noindex|error/u', $l)) return '❌ ' . $t;
+        if (preg_match('/low\b|warn|slow/u', $l)) return '⚠️ ' . $t;
+        if (preg_match('/good|ok\b|enabled|passed|success/u', $l)) return '✅ ' . $t;
+        if (preg_match('/link|external|internal/u', $l)) return '🔗 ' . $t;
+        if (preg_match('/image|alt/u', $l)) return '🖼 ' . $t;
+        if (preg_match('/mobile/u', $l)) return '📱 ' . $t;
+        if (preg_match('/speed|load|performance/u', $l)) return '⚡ ' . $t;
+        if (preg_match('/schema|faq|howto/u', $l)) return '📖 ' . $t;
+        if (preg_match('/keyword/u', $l)) return '🎯 ' . $t;
+        if (preg_match('/cta/u', $l)) return '🔔 ' . $t;
+        if (preg_match('/robot|robots|noindex/u', $l)) return '🤖 ' . $t;
+        if (preg_match('/h1|title|header/u', $l)) return '📑 ' . $t;
+        return '• ' . $t;
+    }
     
     /**
      * Constructor
@@ -116,6 +568,7 @@ class SEO_Page_Monitor {
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         add_action('rest_api_init', array($this, 'register_rest_routes'));
         add_action('admin_post_seo_monitor_export_csv', array($this, 'handle_export_csv'));
+        add_action('admin_post_seo_monitor_export_xlsx', array($this, 'handle_export_xlsx'));
         
         // Load WP-CLI commands
         if (defined('WP_CLI') && WP_CLI) {
@@ -384,12 +837,7 @@ class SEO_Page_Monitor {
                             </p>
                             </form>
 
-                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px;">
-                                <?php wp_nonce_field('seo_monitor_export_csv'); ?>
-                                <input type="hidden" name="action" value="seo_monitor_export_csv">
-                                <input type="submit" class="button" value="Export CSV">
-                                <span class="description" style="margin-left:8px;">Download current pages as CSV (Excel compatible)</span>
-                            </form>
+                            <!-- CSV export moved to main dashboard UI -->
 
                             <script>
                             document.addEventListener('DOMContentLoaded', function(){
@@ -531,6 +979,8 @@ class SEO_Page_Monitor {
                 'nonce' => wp_create_nonce('wp_rest'),
                 'apiUrl' => rest_url(),
                 'adminUrl' => admin_url(),
+                'exportNonce' => wp_create_nonce('seo_monitor_export_csv'),
+                'xlsxAvailable' => class_exists('PhpOffice\\PhpSpreadsheet\\Spreadsheet') ? true : false,
             )
         );
         
@@ -638,14 +1088,25 @@ class SEO_Page_Monitor {
             }
             $sanitized = array();
             // Scalars
+            // Whitelisted scalar fields to persist
             $scalars = array(
                 'url', 'title', 'description', 'focusKeyword', 'rankMathScore',
-                'internalLinks', 'externalLinks', 'altImages', 'priority', 'status'
+                'internalLinks', 'externalLinks', 'altImages', 'priority', 'status',
+                // persist ranking and search volume
+                'ranking', 'searchVolume',
+                // persist page speed metrics and references
+                'pageSpeedMobile', 'pageSpeedDesktop', 'pageSpeedMobileUrl', 'pageSpeedDesktopUrl', 'pageSpeedTestedAt',
+                // persist WP linkage
+                'postId'
             );
             foreach ($scalars as $key) {
                 if (isset($page[$key])) {
                     $sanitized[$key] = sanitize_text_field($page[$key]);
                 }
+            }
+            // Preserve newlines in actions text for clean bullet splitting
+            if (isset($page['onPageActions'])) {
+                $sanitized['onPageActions'] = sanitize_textarea_field($page['onPageActions']);
             }
             // Arrays we want to keep
             $array_keys = array('seoAnalysis', 'technicalSeo', 'recommendations', 'nextActions');
