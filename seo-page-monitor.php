@@ -3,7 +3,7 @@
  * Plugin Name: SEO Page Monitor & Optimizer
  * Plugin URI: https://github.com/wikiwyrhead/wiki-seo-page-monitor
  * Description: Track and monitor SEO rankings, PageSpeed scores, and optimization tasks for your pages
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: arnelG
  * Author URI: https://github.com/wikiwyrhead
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('SEO_MONITOR_VERSION', '1.0.0');
+define('SEO_MONITOR_VERSION', '1.2.0');
 define('SEO_MONITOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SEO_MONITOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
