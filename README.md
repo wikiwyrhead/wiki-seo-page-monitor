@@ -77,6 +77,13 @@ GPL v2 or later
 
 ## Changelog
 
+### 1.2.0
+- UI: Actions Completed and Next Actions render as iconized bullets with per-line wrapping and Show more/Collapse.
+- UI: SEO Recommendations restored to a neat two-column table for readability.
+- Export (Excel): Overview columns I/J/K (Actions/Recommendations/Next) now export one item per line with emoji icons and wrapping.
+- Export (Excel): Improved splitter for emojis/labels and special handling for Header Structure lines; normalized newlines; auto row height.
+- Persistence: Preserve newlines for Actions Completed so UI/exports keep intended line breaks.
+
 ### 1.1.0
 - Export: Add Export CSV action (Excel-compatible) from Settings
 - Security: CSV sanitization to prevent Excel formula injection
