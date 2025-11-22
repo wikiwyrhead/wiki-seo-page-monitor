@@ -6,11 +6,5 @@
 /node_modules/ export-ignore
 /.env export-ignore
 /.env.* export-ignore
-/.gitattributes export-ignore
-/.gitignore export-ignore
-/*.psd export-ignore
-/*.log export-ignore
 
-# Keep important docs in archives
-!/README.md
-!/readme.html
+# Keep important docs in archives (leave README files included by default)
