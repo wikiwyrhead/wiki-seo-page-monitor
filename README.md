@@ -77,6 +77,11 @@ GPL v2 or later
 
 ## Changelog
 
+### 1.1.0
+- Export: Add Export CSV action (Excel-compatible) from Settings
+- Security: CSV sanitization to prevent Excel formula injection
+- Version: Bump plugin header to 1.1.0
+
 ### 1.0.1
 - Admin: Google Sheets readiness notices on Settings
 - Sheets: Header-aware writes (align to header order when enabled)

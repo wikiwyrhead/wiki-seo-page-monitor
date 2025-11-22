@@ -3,7 +3,7 @@
  * Plugin Name: SEO Page Monitor & Optimizer
  * Plugin URI: https://github.com/wikiwyrhead/wiki-seo-page-monitor
  * Description: Track and monitor SEO rankings, PageSpeed scores, and optimization tasks for your pages
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: arnelG
  * Author URI: https://github.com/wikiwyrhead
  * License: GPL v2 or later
@@ -47,6 +47,66 @@ class SEO_Page_Monitor {
         }
         return self::$instance;
     }
+
+    /**
+     * Handle CSV export for current pages list
+     */
+    public function handle_export_csv() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have permission to export.', 'seo-page-monitor'));
+        }
+        check_admin_referer('seo_monitor_export_csv');
+
+        $pages = get_option('seo_monitor_pages', array());
+        $filename = 'seo-page-monitor-' . date('Ymd-His') . '.csv';
+
+        // Send headers
+        nocache_headers();
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        header('Pragma: no-cache');
+
+        // UTF-8 BOM for Excel
+        echo "\xEF\xBB\xBF";
+
+        $out = fopen('php://output', 'w');
+        // Header row
+        fputcsv($out, array('URL','Title','Description','Focus Keyword','RankMath Score','Internal Links','External Links','Alt Images','Status','Notes'));
+
+        foreach ($pages as $p) {
+            $url = isset($p['url']) ? $this->sanitize_csv($p['url']) : '';
+            $title = isset($p['title']) ? $this->sanitize_csv($p['title']) : '';
+            $desc = isset($p['description']) ? $this->sanitize_csv($p['description']) : '';
+            $fk = isset($p['focusKeyword']) ? $this->sanitize_csv($p['focusKeyword']) : '';
+            $score = isset($p['rankMathScore']) ? $this->sanitize_csv($p['rankMathScore']) : '';
+            $il = isset($p['internalLinks']) ? $this->sanitize_csv($p['internalLinks']) : '';
+            $el = isset($p['externalLinks']) ? $this->sanitize_csv($p['externalLinks']) : '';
+            $ai = isset($p['altImages']) ? $this->sanitize_csv($p['altImages']) : '';
+            $status = isset($p['priority']) ? $this->sanitize_csv($p['priority']) : (isset($p['status']) ? $this->sanitize_csv($p['status']) : '');
+            $notes = '';
+            if (isset($p['nextActions']) && is_array($p['nextActions'])) {
+                $notes = implode("; ", array_map(array($this,'sanitize_csv'), $p['nextActions']));
+            } elseif (isset($p['recommendations']) && is_array($p['recommendations'])) {
+                $notes = implode("; ", array_map(array($this,'sanitize_csv'), $p['recommendations']));
+            }
+            fputcsv($out, array($url,$title,$desc,$fk,$score,$il,$el,$ai,$status,$notes));
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    /**
+     * Prevent CSV/Excel formula injection and ensure scalar string
+     */
+    private function sanitize_csv($value) {
+        $s = is_scalar($value) ? (string)$value : '';
+        // If starts with =, +, -, @ then prefix with apostrophe
+        if ($s !== '' && preg_match('/^[=+\-@]/', $s)) {
+            $s = "'" . $s;
+        }
+        return $s;
+    }
     
     /**
      * Constructor
@@ -55,6 +115,7 @@ class SEO_Page_Monitor {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         add_action('rest_api_init', array($this, 'register_rest_routes'));
+        add_action('admin_post_seo_monitor_export_csv', array($this, 'handle_export_csv'));
         
         // Load WP-CLI commands
         if (defined('WP_CLI') && WP_CLI) {
@@ -321,6 +382,14 @@ class SEO_Page_Monitor {
                                     <span style="margin-left: 12px; font-weight: bold;">Queued: <?php echo esc_html($queue_count); ?></span>
                                 <?php endif; ?>
                             </p>
+                            </form>
+
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px;">
+                                <?php wp_nonce_field('seo_monitor_export_csv'); ?>
+                                <input type="hidden" name="action" value="seo_monitor_export_csv">
+                                <input type="submit" class="button" value="Export CSV">
+                                <span class="description" style="margin-left:8px;">Download current pages as CSV (Excel compatible)</span>
+                            </form>
 
                             <script>
                             document.addEventListener('DOMContentLoaded', function(){
