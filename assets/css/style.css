@@ -1,0 +1,467 @@
+/* Plugin custom styles */
+#seo-monitor-root {
+    margin: -20px -20px 0 -10px;
+}
+
+/* Override WordPress admin styles */
+.wrap #seo-monitor-root {
+    background: transparent;
+}
+
+/* Ensure proper rendering in WordPress admin */
+#seo-monitor-root * {
+    box-sizing: border-box;
+}
+
+/* WordPress admin compatibility */
+.toplevel_page_seo-page-monitor #wpbody-content {
+    padding-bottom: 0;
+}
+
+/* Settings page layout fixes */
+.wrap.seo-monitor-settings .seo-monitor-card {
+    background: #fff;
+    border: 1px solid #e6e6e6;
+    padding: 16px 18px;
+    border-radius: 6px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+    margin-bottom: 16px;
+    max-width: 960px;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    clear: both;
+    float: none;
+    align-self: flex-start;
+}
+
+/* Two column layout for settings + sidebar */
+.seo-monitor-layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 28px;
+    align-items: start;
+}
+.seo-monitor-main {
+    min-width: 0;
+}
+.seo-monitor-sidebar {
+    width: 320px;
+    position: sticky;
+    top: 96px; /* below WP admin bar */
+}
+.seo-monitor-support {
+    max-width: 320px;
+    width: 100%;
+}
+
+.seo-monitor-main .seo-monitor-card { max-width: 100%; }
+.seo-monitor-sidebar .seo-monitor-card {
+    max-width: 100% !important;
+    box-sizing: border-box;
+}
+
+/* Two-column instructions layout */
+.seo-monitor-api-instructions-columns {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+}
+.seo-monitor-api-instructions-col {
+    flex: 1 1 320px;
+    min-width: 320px;
+    max-width: 480px;
+    padding: 0 4px;
+}
+.seo-monitor-api-instructions-col h3 {
+    margin-top: 16px;
+    margin-bottom: 8px;
+    font-size: 17px;
+    color: var(--seo-monitor-primary);
+}
+.seo-monitor-api-instructions-col ol {
+    margin-bottom: 10px;
+    padding-left: 22px;
+    line-height: 1.6;
+}
+.seo-monitor-api-info, .seo-monitor-api-links {
+    background: #f6f8fa;
+    border-left: 4px solid var(--seo-monitor-primary);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 4px;
+}
+.seo-monitor-api-links {
+    border-left-color: #00a32a;
+}
+.seo-monitor-api-info h4, .seo-monitor-api-links h4 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 15px;
+    color: var(--seo-monitor-primary);
+}
+.seo-monitor-api-info ul, .seo-monitor-api-links ul {
+    margin-bottom: 0;
+    padding-left: 18px;
+    font-size: 15px;
+}
+
+/* Compact version displayed in the sidebar */
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact {
+    padding: 12px 14px;
+    background: #fff;
+    border: 1px solid var(--seo-monitor-border);
+    border-radius: 6px;
+}
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact .seo-monitor-title {
+    font-size: 15px;
+    margin-bottom: 6px;
+    color: var(--seo-monitor-primary);
+}
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact p {
+    font-size: 13px;
+    color: var(--seo-monitor-muted);
+    margin: 0 0 8px;
+    line-height: 1.4;
+}
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact .seo-monitor-api-instructions-columns {
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Compact column adjustments: allow shrinking and wrapping inside narrow sidebar */
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact .seo-monitor-api-instructions-col {
+    min-width: 0;
+    flex: 1 1 auto;
+    max-width: 100%;
+    padding: 0;
+}
+
+/* Ensure inline code and pre blocks wrap inside the compact card */
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact code,
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: block;
+}
+
+/* Remove extra left spacing reserved for list numbers in compact card */
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact ol {
+    margin: 0 0 8px 0 !important;
+    padding-left: 0 !important;
+    list-style-position: inside !important;
+}
+.seo-monitor-sidebar .seo-monitor-api-instructions--compact ol li {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+
+@media (max-width: 1100px) {
+    .seo-monitor-api-instructions-columns {
+        flex-direction: column;
+        gap: 0;
+    }
+    .seo-monitor-api-instructions-col {
+        max-width: 100%;
+        margin-bottom: 18px;
+    }
+    .seo-monitor-layout {
+        display: block;
+    }
+    .seo-monitor-sidebar {
+        width: 100%;
+        margin-top: 18px;
+        position: static;
+    }
+    /* center cards on small screens */
+    .wrap.seo-monitor-settings .seo-monitor-card {
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
+
+/* Design tokens */
+.wrap.seo-monitor-settings {
+    --seo-monitor-primary: #2271b1; /* base blue */
+    --seo-monitor-accent: #667eea; /* purple gradient */
+    --seo-monitor-muted: #6b7280; /* muted text */
+    --seo-monitor-border: #d6d6d6;
+    --seo-monitor-bg: #ffffff;
+}
+
+/* Container for plugin settings area (plugin-controlled width) */
+.wrap.seo-monitor-settings .seo-monitor-container {
+    max-width: 1200px; /* increase to your preferred maximum */
+    margin: 0 auto;
+    padding: 0 12px;
+}
+
+/* Align and style the page title within the plugin container */
+.wrap.seo-monitor-settings .seo-monitor-title {
+    margin: 10px 0 12px;
+    font-size: 21px;
+    font-weight: 700;
+    color: var(--seo-monitor-primary);
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+}
+
+/* Compact instructions card heading */
+.seo-monitor-api-instructions .seo-monitor-title {
+    margin-bottom: 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--seo-monitor-primary);
+}
+
+
+@media (max-width: 1100px) {
+    .wrap.seo-monitor-settings .seo-monitor-card {
+        max-width: 95%;
+    }
+}
+
+@media (min-width: 1600px) {
+    .wrap.seo-monitor-settings .seo-monitor-card {
+        max-width: 1600px;
+    }
+}
+
+.wrap.seo-monitor-settings .seo-monitor-card input.regular-text,
+.wrap.seo-monitor-settings .seo-monitor-card textarea.regular-text {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Heading styles inside plugin cards */
+.wrap.seo-monitor-settings .seo-monitor-card h2 {
+    color: var(--seo-monitor-primary);
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+/* Refine labels and small text */
+.wrap.seo-monitor-settings .form-table th label {
+    font-weight: 600;
+    color: #111827; /* near-black for legibility */
+    font-size: 14px;
+}
+.wrap.seo-monitor-settings .form-table .description {
+    color: var(--seo-monitor-muted);
+    font-size: 13px;
+}
+
+/* Inputs - subtle border and focus state */
+.wrap.seo-monitor-settings .form-table input.regular-text,
+.wrap.seo-monitor-settings .form-table textarea.regular-text,
+.wrap.seo-monitor-settings .form-table select {
+    border: 1px solid var(--seo-monitor-border);
+    background: var(--seo-monitor-bg);
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+.wrap.seo-monitor-settings .form-table input.regular-text:focus,
+.wrap.seo-monitor-settings .form-table textarea.regular-text:focus,
+.wrap.seo-monitor-settings .form-table select:focus {
+    outline: none;
+    border-color: var(--seo-monitor-primary);
+    box-shadow: 0 0 0 3px rgba(34,113,177,0.08);
+}
+
+/* Visual subtle split between sections */
+.wrap.seo-monitor-settings .seo-monitor-card + .seo-monitor-card {
+    margin-top: 18px;
+}
+
+/* Button refinements */
+.wrap.seo-monitor-settings .submit .button-primary {
+    background: linear-gradient(180deg,var(--seo-monitor-primary),#1b5f99);
+    border-color: rgba(0,0,0,0.12);
+    color: #fff;
+}
+.wrap.seo-monitor-settings .submit .button-primary:hover {
+    filter: brightness(0.93);
+}
+
+/* Reduce overall vertical padding to be tighter */
+.wrap.seo-monitor-settings .form-table td,
+.wrap.seo-monitor-settings .form-table th { padding-top: 8px; padding-bottom: 8px; }
+
+.wrap.seo-monitor-settings .form-table th {
+    width: auto; /* allow label to flow above field */
+    vertical-align: top;
+    padding-top: 10px;
+    font-weight: 600;
+}
+
+.wrap.seo-monitor-settings .form-table td {
+    padding-top: 10px;
+}
+
+/* Improve label and input alignment */
+.wrap.seo-monitor-settings .form-table th label {
+    display: inline-block;
+    max-width: 240px;
+    line-height: 1.4;
+}
+
+.wrap.seo-monitor-settings .form-table input.regular-text,
+.wrap.seo-monitor-settings .form-table textarea.regular-text,
+.wrap.seo-monitor-settings .form-table select {
+    width: 100%;
+    max-width: none;
+    padding: .45em .6em;
+    border: 1px solid #d6d6d6;
+    border-radius: 4px;
+    background: #fff;
+    color: #222;
+}
+
+.wrap.seo-monitor-settings .form-table textarea.regular-text {
+    min-height: 120px;
+    resize: vertical;
+}
+
+/* Stack labels above fields to save horizontal space */
+.wrap.seo-monitor-settings .form-table {
+    display: block;
+}
+.wrap.seo-monitor-settings .form-table tr {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 14px;
+}
+.wrap.seo-monitor-settings .form-table th,
+.wrap.seo-monitor-settings .form-table td {
+    display: block;
+    width: 100%;
+    padding: 0;
+}
+.wrap.seo-monitor-settings .form-table th label {
+    display: block;
+    margin-bottom: 6px;
+}
+.wrap.seo-monitor-settings .form-table .description {
+    margin-top: 8px;
+}
+
+/* Keep checkbox label compact */
+.wrap.seo-monitor-settings .form-table input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+/* Note style */
+.wrap.seo-monitor-settings .form-table .description {
+    color: #666;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+/* Buttons */
+.wrap.seo-monitor-settings .submit .button.secondary,
+.wrap.seo-monitor-settings .submit .button.button-secondary {
+    margin-left: .5rem;
+}
+
+/* Make flush button visible */
+.wrap.seo-monitor-settings input[name="seo_monitor_flush_sheets"] {
+    background: #f5f7fa;
+    border: 1px solid #ccd0d4;
+}
+
+/* Improve spacing for checkbox rows */
+.wrap.seo-monitor-settings .form-table th:first-child {
+    padding-top: 14px;
+}
+
+.wrap.seo-monitor-settings .form-table .description {
+    display: block;
+}
+
+.wrap.seo-monitor-settings label[for="seo_monitor_google_sheet_id"] .description {
+    display: block;
+}
+
+/* Notification animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        box-sizing: border-box;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Loading spinner */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+/* duplicate 'spin' keyframes removed */
+
+/* Prevent long inline code or pre blocks from overflowing card width */
+.wrap.seo-monitor-settings .seo-monitor-card pre,
+.wrap.seo-monitor-settings .seo-monitor-card code {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+    display: block;
+}
+.wrap.seo-monitor-settings .seo-monitor-card pre {
+    background: #f6f8fa;
+    padding: 10px;
+    border-radius: 4px;
+    overflow: auto;
+}
+
+/* Ensure main column can shrink and sidebar sits above without covering content */
+.seo-monitor-main { min-width: 0; }
+.seo-monitor-sidebar { z-index: 20; }
+
+
+/* Ensure the search icon doesn't overlap placeholder on sites that override input padding */
+#seo-monitor-root .seo-monitor-search-input {
+    padding-left: 45px !important;
+}
+@media (min-width: 640px) {
+    #seo-monitor-root .seo-monitor-search-input {
+        padding-left: 55px !important; /* matches sm:pl-16 */
+    }
+}
+@media (min-width: 768px) {
+    #seo-monitor-root .seo-monitor-search-input {
+        padding-left: 65px !important; /* matches md:pl-20 */
+    }
+}
+
+/* Password toggle button for API key field */
+.password-toggle {
+    padding: .45em .6em;
+    font-size: 13px;
+    border: 1px solid var(--seo-monitor-border);
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.password-toggle:hover {
+    filter: brightness(0.98);
+}
+.password-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(34,113,177,0.08);
+}
+

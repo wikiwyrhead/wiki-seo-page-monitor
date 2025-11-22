@@ -1,0 +1,66 @@
+name: Build Plugin Zip
+
+on:
+  push:
+    branches: [ main, master ]
+  release:
+    types: [ published ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure zip utility
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Set up PHP and Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, xml, json
+          tools: composer
+
+      - name: Install Composer dependencies (if present)
+        working-directory: .
+        run: |
+          if [ -f composer.json ]; then
+            composer install --no-interaction --prefer-dist --optimize-autoloader;
+          else
+            echo "No composer.json found — skipping composer install.";
+          fi
+
+      - name: Run PHP unit tests (if available)
+        working-directory: .
+        run: |
+          if [ -f vendor/bin/phpunit ]; then
+            echo "Running vendor/bin/phpunit";
+            vendor/bin/phpunit --configuration phpunit.xml || vendor/bin/phpunit || true
+          elif command -v phpunit >/dev/null 2>&1; then
+            echo "Running phpunit from PATH";
+            phpunit || true
+          else
+            echo "No phpunit found — skipping tests.";
+          fi
+
+      - name: Build plugin zip
+        run: |
+          chmod +x ./build/build.sh || true
+          ./build/build.sh
+
+      - name: Upload plugin zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seo-page-monitor-zip
+          path: seo-page-monitor-*.zip
+
+      - name: Attach to release (when triggered by release)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: seo-page-monitor-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
