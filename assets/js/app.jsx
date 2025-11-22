@@ -57,6 +57,52 @@ const SEOMonitor = () => {
     recommendations: ''
   });
   const [openRecommendations, setOpenRecommendations] = useState({});
+  const [openActions, setOpenActions] = useState({});
+
+  const iconize = (text) => {
+    const t = String(text || '').trim();
+    const l = t.toLowerCase();
+    if (/[✅⚠️❌🔗🖼📱⚡📖🎯🔍🔔📑🤖]/.test(t)) return t; // already has icon
+    if (/missing|\bno\b|not found|set to noindex|error/.test(l)) return `❌ ${t}`;
+    if (/low\b|warn|slow/.test(l)) return `⚠️ ${t}`;
+    if (/good|ok\b|enabled|passed|success/.test(l)) return `✅ ${t}`;
+    if (/link|external|internal/.test(l)) return `🔗 ${t}`;
+    if (/image|alt/.test(l)) return `🖼 ${t}`;
+    if (/mobile/.test(l)) return `📱 ${t}`;
+    if (/speed|load|performance/.test(l)) return `⚡ ${t}`;
+    if (/schema|faq|howto/.test(l)) return `📖 ${t}`;
+    if (/keyword/.test(l)) return `🎯 ${t}`;
+    if (/cta/.test(l)) return `🔔 ${t}`;
+    if (/robot|robots|noindex/.test(l)) return `🤖 ${t}`;
+    if (/h1|title|header/.test(l)) return `📑 ${t}`;
+    return `• ${t}`;
+  };
+
+  // Expand a combined Actions Completed string into multiple bullets
+  const expandActionItem = (text) => {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    // Normalize spaces for robust matching
+    const norm = raw.replace(/\s+/g, ' ').trim();
+    // Case 1: Combined header structure with H1 count and H1 content
+    let m = norm.match(/^Header Structure:\s*H1\s*:\s*(\d+)\s*H1\s*Content\s*:\s*(.+)$/i);
+    if (m) {
+      return [
+        iconize(`📑 Header Structure: H1:${m[1]}`),
+        iconize(`📑 H1 Content: ${m[2]}`)
+      ];
+    }
+    // Case 2: Starts directly with H1 count and content
+    m = norm.match(/^H1\s*:\s*(\d+)\s*H1\s*Content\s*:\s*(.+)$/i);
+    if (m) {
+      return [
+        iconize(`📑 H1:${m[1]}`),
+        iconize(`📑 H1 Content: ${m[2]}`)
+      ];
+    }
+    // Default: do not split further to avoid noisy extra rows
+    return [iconize(raw)];
+  };
 
   // Load pages from WordPress
   useEffect(() => {
@@ -102,6 +148,30 @@ const SEOMonitor = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // CSV export helpers (admin-post.php)
+  const exportCsvAll = () => {
+    const url = `${seoMonitorData.adminUrl}admin-post.php?action=seo_monitor_export_csv&_wpnonce=${seoMonitorData.exportNonce}`;
+    window.location.href = url;
+  };
+
+  const exportCsvOne = (pageUrl) => {
+    if (!pageUrl) return;
+    const url = `${seoMonitorData.adminUrl}admin-post.php?action=seo_monitor_export_csv&_wpnonce=${seoMonitorData.exportNonce}&url=${encodeURIComponent(pageUrl)}`;
+    window.location.href = url;
+  };
+
+  // Excel export helpers (admin-post.php)
+  const exportXlsxAll = () => {
+    if (!seoMonitorData.xlsxAvailable) return;
+    const url = `${seoMonitorData.adminUrl}admin-post.php?action=seo_monitor_export_xlsx&_wpnonce=${seoMonitorData.exportNonce}`;
+    window.location.href = url;
+  };
+  const exportXlsxOne = (pageUrl) => {
+    if (!seoMonitorData.xlsxAvailable || !pageUrl) return;
+    const url = `${seoMonitorData.adminUrl}admin-post.php?action=seo_monitor_export_xlsx&_wpnonce=${seoMonitorData.exportNonce}&url=${encodeURIComponent(pageUrl)}`;
+    window.location.href = url;
   };
 
   const getRecommendationsForUrl = async (url) => {
@@ -537,9 +607,23 @@ const SEOMonitor = () => {
     let items = text.split(/\r?\n/).map(i => i.trim()).filter(Boolean);
     if (items.length > 1) return items;
 
+    // Split by bullet characters
+    items = text.split(/\s*•\s+/).map(i => i.trim()).filter(Boolean);
+    if (items.length > 1) return items;
+
     // Try splitting by common emoji markers used in recommendations
-    const emojiSplit = text.split(/(?=(?:📝|✅|🔗|🖼|📱|⚡|📖|🎯|🔍|🔔|💡|⚠️|🔧))/).map(i => i.trim()).filter(Boolean);
+    const emojiSplit = text.split(/(?=(?:📝|✅|🔗|🖼|📱|⚡|📖|🎯|🔍|🔔|💡|⚠️|🔧|🤖|✖|✔|❌|✅))/).map(i => i.trim()).filter(Boolean);
     if (emojiSplit.length > 1) return emojiSplit;
+
+    // Generic emoji split (Extended Pictographic)
+    try {
+      const genericEmojiSplit = text.split(/(?=\p{Extended_Pictographic})/u).map(i => i.trim()).filter(Boolean);
+      if (genericEmojiSplit.length > 1) return genericEmojiSplit;
+    } catch (_) { /* Unicode property may not be supported */ }
+
+    // Label splits for common technical phrases (helps Actions Completed)
+    const techLabels = text.split(/(?=\b(Header Structure:|Content:|Robots:|H1\s*Content:|H1:)\b)/).map(i => i.trim()).filter(Boolean);
+    if (techLabels.length > 1) return techLabels;
 
     // Try splitting by capitalized label keywords (TITLE:, META:, CONTENT:, LINKS:, IMAGES:, MOBILE:, SPEED:, READABILITY:, KEYWORD:)
     const labelSplit = text.split(/(?=(?:TITLE:|META:|CONTENT:|LINKS:|IMAGES:|MOBILE:|SPEED:|READABILITY:|KEYWORD:|CTA:|SCHEMA:))/).map(i => i.trim()).filter(Boolean);
@@ -583,8 +667,26 @@ const SEOMonitor = () => {
                 disabled={exporting || pages.length === 0}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {exporting ? '⏳' : '📥'} Export
+                {exporting ? '⏳' : '📥'} Export JSON
               </button>
+              <button
+                onClick={exportCsvAll}
+                disabled={pages.length === 0}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Export all pages to CSV (Excel compatible)"
+              >
+                📑 Export CSV
+              </button>
+              {seoMonitorData.xlsxAvailable && (
+                <button
+                  onClick={exportXlsxAll}
+                  disabled={pages.length === 0}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Export all pages to Excel with multiple sheets"
+                >
+                  📊 Export Excel
+                </button>
+              )}
               <label className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium flex items-center gap-2 cursor-pointer">
                 <input
                   type="file"
@@ -1140,6 +1242,22 @@ const SEOMonitor = () => {
                         >
                           ✏️ Edit
                         </button>
+                        <button
+                          onClick={() => exportCsvOne(page.url)}
+                          className="px-3 py-1 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg font-medium"
+                          title="Export this page to CSV"
+                        >
+                          📑 Export CSV
+                        </button>
+                        {seoMonitorData.xlsxAvailable && (
+                          <button
+                            onClick={() => exportXlsxOne(page.url)}
+                            className="px-3 py-1 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg font-medium"
+                            title="Export this page to Excel"
+                          >
+                            📊 Export Excel
+                          </button>
+                        )}
                         {page.postId && (
                           <a
                             href={`${seoMonitorData.adminUrl}post.php?post=${page.postId}&action=edit`}
@@ -1197,23 +1315,59 @@ const SEOMonitor = () => {
                             <span className="font-semibold">RankMath: {page.rankMathScore}/100</span>
                           </div>
                         )}
+                        {(page.description || page.focusKeyword) && (
+                          <div className="bg-gray-50 border-l-4 border-gray-300 p-3 rounded">
+                            <div className="text-sm text-gray-700 space-y-1">
+                              {page.description && (
+                                <div><span className="font-semibold">Meta Description:</span> {String(page.description).slice(0, 180)}{String(page.description).length > 180 ? '…' : ''}</div>
+                              )}
+                              {page.focusKeyword && (
+                                <div><span className="font-semibold">Focus Keyword:</span> {page.focusKeyword}</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {page.onPageActions && (
                           <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded">
-                            <h4 className="font-semibold text-green-900 mb-2">Actions Completed</h4>
-                            <div className="flex flex-wrap gap-2">
-                              {(Array.isArray(page.onPageActions) ? page.onPageActions : String(page.onPageActions).split(/\r?\n|\|/)).filter(Boolean).map((act, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-2 px-2 py-1 bg-green-100 text-green-900 text-xs font-medium rounded">
-                                  {act.trim()}
-                                </span>
-                              ))}
+                            <div className="flex items-start justify-between">
+                              <h4 className="font-semibold text-green-900 mb-2">Actions Completed</h4>
+                              {(() => {
+                                const acts = parseRecommendations(page.onPageActions);
+                                const key = actualIndex;
+                                const long = acts.length > 6 || acts.join(' ').length > 250;
+                                if (!long) return null;
+                                return (
+                                  <button
+                                    onClick={() => setOpenActions({ ...openActions, [key]: !openActions[key] })}
+                                    className="text-sm text-green-700 hover:underline"
+                                  >
+                                    {openActions[key] ? 'Collapse' : 'Show more'}
+                                  </button>
+                                );
+                              })()}
                             </div>
+
+                            {(() => {
+                              const acts = parseRecommendations(page.onPageActions);
+                              const key = actualIndex;
+                              const long = acts.length > 6 || acts.join(' ').length > 250;
+                              const expanded = acts.filter(Boolean).flatMap(expandActionItem).filter(Boolean);
+                              return (
+                                <div className={`${long && !openActions[key] ? 'max-h-40 overflow-hidden' : ''}`}>
+                                  <ul className="list-none pl-0 space-y-1 text-sm text-gray-800">
+                                    {expanded.map((act, idx) => (
+                                      <li key={idx} className="leading-5">{act}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                         {page.recommendations && (
                           <div className="bg-purple-50 border-l-4 border-purple-400 p-3 rounded">
                             <div className="flex items-start justify-between">
                               <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">💡 SEO Recommendations</h4>
-                              {/* show/hide toggle per page */}
                               {(() => {
                                 const recs = parseRecommendations(page.recommendations);
                                 const key = actualIndex;
@@ -1230,38 +1384,29 @@ const SEOMonitor = () => {
                               })()}
                             </div>
 
-                            <div className="relative">
-                              {(() => {
-                                const recs = parseRecommendations(page.recommendations);
-                                const key = actualIndex;
-                                const long = recs.length > 6 || recs.join(' ').length > 250;
-                                const rows = [];
-                                for (let i = 0; i < recs.length; i += 2) {
-                                  rows.push([recs[i], recs[i + 1] || '']);
-                                }
-
-                                return (
-                                  <>
-                                    <div className={`${long && !openRecommendations[key] ? 'max-h-40 overflow-hidden' : ''}`}>
-                                      <table className="w-full table-fixed text-sm text-gray-700 border-separate" style={{ borderSpacing: '0 6px' }}>
-                                        <tbody>
-                                          {rows.map((pair, r) => (
-                                            <tr key={r} className="align-top bg-white rounded-md shadow-sm">
-                                              <td className="w-1/2 pr-4 py-3 align-top border-r border-gray-100">{pair[0] && pair[0].trim()}</td>
-                                              <td className="w-1/2 pl-4 py-3 align-top text-gray-700">{pair[1] && pair[1].trim()}</td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-
-                                    {long && !openRecommendations[key] && (
-                                      <div className="pointer-events-none absolute left-0 right-0 bottom-0 h-16 bg-gradient-to-b from-transparent to-purple-50" />
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </div>
+                            {(() => {
+                              const recs = parseRecommendations(page.recommendations);
+                              const key = actualIndex;
+                              const long = recs.length > 6 || recs.join(' ').length > 250;
+                              const rows = [];
+                              for (let i = 0; i < recs.length; i += 2) {
+                                rows.push([iconize(recs[i]), recs[i + 1] ? iconize(recs[i + 1]) : '']);
+                              }
+                              return (
+                                <div className={`${long && !openRecommendations[key] ? 'max-h-40 overflow-hidden' : ''}`}>
+                                  <table className="w-full table-fixed text-sm text-gray-700 border-separate" style={{ borderSpacing: '0 6px' }}>
+                                    <tbody>
+                                      {rows.map((pair, r) => (
+                                        <tr key={r} className="align-top bg-white rounded-md shadow-sm">
+                                          <td className="w-1/2 pr-4 py-3 align-top border-r border-gray-100 whitespace-pre-wrap">{pair[0]}</td>
+                                          <td className="w-1/2 pl-4 py-3 align-top text-gray-700 whitespace-pre-wrap">{pair[1]}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              );
+                            })()}
 
                             <p className="text-xs text-purple-600 mt-2">✨ Personalized suggestions to improve this page's search ranking</p>
                           </div>
@@ -1269,11 +1414,17 @@ const SEOMonitor = () => {
                         {page.nextActions && (
                           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
                             <h4 className="font-semibold text-yellow-900 mb-2">Next Actions</h4>
-                            <ul className="list-inside list-disc text-sm text-gray-700 space-y-1">
-                              {(Array.isArray(page.nextActions) ? page.nextActions : String(page.nextActions).split(/\r?\n|\|/)).filter(Boolean).map((nxt, i) => (
-                                <li key={i}>{nxt.trim()}</li>
-                              ))}
-                            </ul>
+                            {(() => {
+                              const source = Array.isArray(page.nextActions) ? page.nextActions.join('\n') : page.nextActions;
+                              const items = parseRecommendations(source);
+                              return (
+                                <ul className="list-none pl-0 space-y-1 text-sm text-gray-800">
+                                  {items.filter(Boolean).map((nxt, i) => (
+                                    <li key={i} className="leading-5">{iconize(nxt)}</li>
+                                  ))}
+                                </ul>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
