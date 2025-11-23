@@ -256,6 +256,12 @@ npm run test:e2e
 
 ## 📋 Changelog
 
+### 1.2.1
+- Fix (REST): Add no-cache headers to all `seo-monitor/v1` endpoints to prevent LiteSpeed/proxy/browser caching from hiding newly-saved pages.
+- Build: Packaging scripts updated to exclude dev/test/CI artifacts (keep `vendor/` for installable zip).
+- Frontend: Rebuilt production assets via `webpack --mode production`.
+- Docs: Enhanced README and changelog.
+
 ### 1.2.0
 - UI: Actions Completed and Next Actions render as iconized bullets with per-line wrapping and Show more/Collapse.
 - UI: SEO Recommendations restored to a neat two-column table for readability.

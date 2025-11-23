@@ -3,7 +3,7 @@
  * Plugin Name: SEO Page Monitor & Optimizer
  * Plugin URI: https://github.com/wikiwyrhead/wiki-seo-page-monitor
  * Description: Track and monitor SEO rankings, PageSpeed scores, and optimization tasks for your pages
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: arnelG
  * Author URI: https://github.com/wikiwyrhead
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('SEO_MONITOR_VERSION', '1.2.0');
+define('SEO_MONITOR_VERSION', '1.2.1');
 define('SEO_MONITOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SEO_MONITOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -567,6 +567,8 @@ class SEO_Page_Monitor {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         add_action('rest_api_init', array($this, 'register_rest_routes'));
+        // Ensure our REST responses are never cached by LSCache/proxies/browsers
+        add_filter('rest_post_dispatch', array($this, 'rest_no_cache_headers'), 10, 3);
         add_action('admin_post_seo_monitor_export_csv', array($this, 'handle_export_csv'));
         add_action('admin_post_seo_monitor_export_xlsx', array($this, 'handle_export_xlsx'));
         
@@ -1052,6 +1054,34 @@ class SEO_Page_Monitor {
             'callback' => array($this, 'import_pages'),
             'permission_callback' => array($this, 'check_permissions'),
         ));
+    }
+
+    /**
+     * Add no-cache headers to REST responses under our namespace to avoid
+     * LiteSpeed/proxy/browser caching that can hide newly-saved data.
+     *
+     * @param WP_HTTP_Response|mixed $result
+     * @param WP_REST_Server         $server
+     * @param WP_REST_Request        $request
+     * @return WP_HTTP_Response|mixed
+     */
+    public function rest_no_cache_headers($result, $server, $request) {
+        try {
+            $route = is_object($request) && method_exists($request, 'get_route') ? (string) $request->get_route() : '';
+            if ($route !== '' && strpos($route, '/seo-monitor/v1') !== false) {
+                if (!headers_sent()) {
+                    // WordPress helper + explicit directives
+                    nocache_headers();
+                    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+                    header('Cache-Control: post-check=0, pre-check=0', false);
+                    header('Pragma: no-cache');
+                    header('Expires: 0');
+                }
+            }
+        } catch (\Throwable $e) {
+            // Silently ignore header issues
+        }
+        return $result;
     }
     
     /**
