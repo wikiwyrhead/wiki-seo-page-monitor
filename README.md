@@ -256,6 +256,14 @@ npm run test:e2e
 
 ## 📋 Changelog
 
+### 1.3.0
+- SEO Audit: Added enhanced on-page analysis based on main content area (keyword density, first 100 words check, image/heading/link analysis).
+- Content Links: Internal/external link counts are now based on the main content area only (navigation/footer excluded).
+- Rich Results: Added FAQ and HowTo content detection to highlight structured data opportunities.
+- Scoring: Introduced weighted SEO score and letter grade derived from detailed audit signals.
+- API: Extended `/seo-monitor/v1/fetch-page` response with granular audit data blocks (keywordAnalysis, imageAnalysis, headingAnalysis, contentLinks, faqAnalysis, howtoAnalysis, seoScore).
+- Version: Bumped plugin version to 1.3.0.
+
 ### 1.2.1
 - Fix (REST): Add no-cache headers to all `seo-monitor/v1` endpoints to prevent LiteSpeed/proxy/browser caching from hiding newly-saved pages.
 - Build: Packaging scripts updated to exclude dev/test/CI artifacts (keep `vendor/` for installable zip).

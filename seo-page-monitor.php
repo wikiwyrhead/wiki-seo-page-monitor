@@ -3,7 +3,7 @@
  * Plugin Name: SEO Page Monitor & Optimizer
  * Plugin URI: https://github.com/wikiwyrhead/wiki-seo-page-monitor
  * Description: Track and monitor SEO rankings, PageSpeed scores, and optimization tasks for your pages
- * Version: 1.2.1
+ * Version: 1.3.0
  * Author: arnelG
  * Author URI: https://github.com/wikiwyrhead
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('SEO_MONITOR_VERSION', '1.2.1');
+define('SEO_MONITOR_VERSION', '1.3.0');
 define('SEO_MONITOR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SEO_MONITOR_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1318,6 +1318,17 @@ class SEO_Page_Monitor {
             'technicalSeo' => $seo_analysis['technicalSeo'],
             'postId' => $post_id,
             'recommendations' => $seo_analysis['recommendations'],
+            // ========================================
+            // ENHANCED: New forensic audit data
+            // ========================================
+            'keywordAnalysis' => $seo_analysis['keywordAnalysis'],
+            'openingParagraph' => $seo_analysis['openingParagraph'],
+            'imageAnalysis' => $seo_analysis['imageAnalysis'],
+            'headingAnalysis' => $seo_analysis['headingAnalysis'],
+            'contentLinks' => $seo_analysis['contentLinks'],
+            'faqAnalysis' => $seo_analysis['faqAnalysis'],
+            'howtoAnalysis' => $seo_analysis['howtoAnalysis'],
+            'seoScore' => $seo_analysis['seoScore'],
         );
 
         do_action('seo_monitor_page_fetched', $data);
@@ -1571,61 +1582,736 @@ class SEO_Page_Monitor {
     }
     
     /**
-     * Comprehensive SEO Analysis
+     * ========================================
+     * ENHANCED SEO AUDIT FUNCTIONS
+     * Based on forensic audit methodology
+     * ========================================
      */
-    private function analyze_seo($html, $url, $post_id = 0) {
-        $analysis = array(
-            'title' => $this->extract_title($html, $post_id),
-            'description' => $this->extract_meta_description($html),
-            'focusKeyword' => $this->extract_rankmath_keyword($html, $post_id),
-            'rankMathScore' => $this->extract_rankmath_score($html, $post_id),
-            'internalLinks' => $this->count_internal_links($html, $url),
-            'externalLinks' => $this->count_external_links($html, $url),
-            'altImages' => $this->check_alt_images($html),
-            'seoHints' => array(),
-            'technicalSeo' => array(),
-        );
+    
+    /**
+     * Extract main content area from HTML
+     * Uses H1 as anchor and traverses up to find content container
+     * Excludes header, footer, sidebar, navigation
+     */
+    private function extract_content_area($html) {
+        // Try to use DOMDocument for proper parsing
+        $dom = new DOMDocument();
+        libxml_use_internal_errors(true);
+        @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+        libxml_clear_errors();
         
-        // Header Tags Analysis with hierarchy
-        preg_match_all('/<h1[^>]*>(.*?)<\/h1>/is', $html, $h1_matches);
-        preg_match_all('/<h2[^>]*>(.*?)<\/h2>/is', $html, $h2_matches);
-        preg_match_all('/<h3[^>]*>(.*?)<\/h3>/is', $html, $h3_matches);
-        preg_match_all('/<h4[^>]*>/i', $html, $h4_matches);
-        preg_match_all('/<h5[^>]*>/i', $html, $h5_matches);
-        preg_match_all('/<h6[^>]*>/i', $html, $h6_matches);
+        $xpath = new DOMXPath($dom);
         
-        $h1_count = count($h1_matches[0]);
-        $h2_count = count($h2_matches[0]);
-        $h3_count = count($h3_matches[0]);
-        $h4_count = count($h4_matches[0]);
-        $h5_count = count($h5_matches[0]);
-        $h6_count = count($h6_matches[0]);
-        
-        // Extract actual H1 text
-        $h1_text = '';
-        if ($h1_count > 0) {
-            $h1_text = html_entity_decode(strip_tags($h1_matches[1][0]), ENT_QUOTES, 'UTF-8');
-            $h1_text = substr($h1_text, 0, 60) . (strlen($h1_text) > 60 ? '...' : '');
+        // Find the main H1
+        $h1_nodes = $xpath->query('//h1');
+        if ($h1_nodes->length === 0) {
+            // Fallback: try common content selectors
+            $content_selectors = array(
+                '//article',
+                '//main',
+                '//*[contains(@class, "entry-content")]',
+                '//*[contains(@class, "post-content")]',
+                '//*[contains(@class, "content-area")]',
+                '//*[contains(@class, "col-lg-8")]',
+                '//*[@id="content"]'
+            );
+            
+            foreach ($content_selectors as $selector) {
+                $nodes = $xpath->query($selector);
+                if ($nodes->length > 0) {
+                    return $dom->saveHTML($nodes->item(0));
+                }
+            }
+            
+            return $html; // Fallback to full HTML
         }
         
-        // Build header hierarchy info
+        $h1 = $h1_nodes->item(0);
+        $container = $h1->parentNode;
+        
+        // Traverse up to find a container with substantial content
+        $max_iterations = 10;
+        $iteration = 0;
+        
+        while ($container && $container->nodeName !== 'body' && $iteration < $max_iterations) {
+            $paragraphs = $xpath->query('.//p', $container)->length;
+            $images = $xpath->query('.//img', $container)->length;
+            $headings = $xpath->query('.//h1|.//h2|.//h3|.//h4|.//h5|.//h6', $container)->length;
+            
+            // Check if this container has substantial content
+            if ($paragraphs >= 3 && $headings >= 2) {
+                // Exclude whole-page containers
+                $class = $container->getAttribute('class');
+                $id = $container->getAttribute('id');
+                
+                // Skip if it's a site-wide container
+                if (stripos($class, 'site') === false && 
+                    stripos($class, 'wrapper') === false &&
+                    stripos($id, 'page') === false &&
+                    $container->nodeName !== 'body') {
+                    break;
+                }
+            }
+            $container = $container->parentNode;
+            $iteration++;
+        }
+        
+        if ($container && $container->nodeName !== 'body') {
+            return $dom->saveHTML($container);
+        }
+        
+        return $html;
+    }
+    
+    /**
+     * Calculate keyword density in content
+     */
+    private function calculate_keyword_density($content, $keyword) {
+        if (empty($keyword) || empty($content)) {
+            return array(
+                'count' => 0,
+                'density' => '0%',
+                'status' => 'missing',
+                'words' => 0
+            );
+        }
+        
+        // Clean content - remove scripts, styles, HTML tags
+        $text = preg_replace('/<script\b[^>]*>(.*?)<\/script>/is', '', $content);
+        $text = preg_replace('/<style\b[^>]*>(.*?)<\/style>/is', '', $text);
+        $text = strtolower(strip_tags($text));
+        
+        // Count words
+        $words = str_word_count($text);
+        if ($words === 0) {
+            return array('count' => 0, 'density' => '0%', 'status' => 'error', 'words' => 0);
+        }
+        
+        // Count keyword occurrences (as phrase)
+        $keyword_lower = strtolower(trim($keyword));
+        $keyword_count = substr_count($text, $keyword_lower);
+        
+        // Calculate density
+        $density = ($keyword_count / $words) * 100;
+        
+        // Determine status
+        $status = 'good';
+        if ($keyword_count === 0) {
+            $status = 'missing';
+        } elseif ($density < 0.5) {
+            $status = 'low';
+        } elseif ($density > 3) {
+            $status = 'high';
+        }
+        
+        return array(
+            'count' => $keyword_count,
+            'density' => round($density, 1) . '%',
+            'densityValue' => round($density, 2),
+            'status' => $status,
+            'words' => $words
+        );
+    }
+    
+    /**
+     * Check if keyword appears in first 100 words
+     */
+    private function check_opening_paragraph($content, $keyword) {
+        if (empty($keyword)) {
+            return array(
+                'found' => false, 
+                'status' => 'No keyword set',
+                'hint' => '⚠️ Set a focus keyword to check opening paragraph'
+            );
+        }
+        
+        // Clean content
+        $text = preg_replace('/<script\b[^>]*>(.*?)<\/script>/is', '', $content);
+        $text = preg_replace('/<style\b[^>]*>(.*?)<\/style>/is', '', $text);
+        $text = strtolower(strip_tags($text));
+        
+        // Get first 100 words
+        $words = preg_split('/\s+/', trim($text));
+        $first_100 = implode(' ', array_slice($words, 0, 100));
+        
+        $found = stripos($first_100, strtolower($keyword)) !== false;
+        
+        return array(
+            'found' => $found,
+            'status' => $found ? 'present' : 'missing',
+            'hint' => $found ? '✅ Keyword in opening paragraph' : '⚠️ Add keyword to first 100 words',
+            'firstWords' => substr($first_100, 0, 200) . '...'
+        );
+    }
+    
+    /**
+     * Comprehensive image SEO analysis
+     */
+    private function analyze_images_seo($content, $keyword) {
+        preg_match_all('/<img\s+[^>]*>/is', $content, $img_matches);
+        $total_images = count($img_matches[0]);
+        
+        if ($total_images === 0) {
+            return array(
+                'total' => 0,
+                'missingAlt' => 0,
+                'withKeyword' => 0,
+                'details' => array(),
+                'status' => 'No images',
+                'hint' => '⚠️ Consider adding relevant images'
+            );
+        }
+        
+        $missing_alt = 0;
+        $with_keyword = 0;
+        $details = array();
+        $keyword_lower = strtolower(trim($keyword));
+        
+        foreach ($img_matches[0] as $index => $img_tag) {
+            // Extract src
+            preg_match('/src=["\']([^"\']+)["\']/i', $img_tag, $src_match);
+            $src = isset($src_match[1]) ? basename($src_match[1]) : 'unknown';
+            
+            // Skip base64 placeholder images for keyword check but count for alt
+            $is_placeholder = strpos($src_match[1] ?? '', 'data:image') !== false;
+            
+            // Extract alt
+            preg_match('/alt=["\']([^"\']*)["\']/', $img_tag, $alt_match);
+            $alt = isset($alt_match[1]) ? trim($alt_match[1]) : '';
+            
+            // Check alt status
+            $has_alt = !empty($alt);
+            $has_keyword = !empty($keyword) && !$is_placeholder && stripos($alt, $keyword_lower) !== false;
+            
+            if (!$has_alt) {
+                $missing_alt++;
+            }
+            if ($has_keyword) {
+                $with_keyword++;
+            }
+            
+            $details[] = array(
+                'id' => $index + 1,
+                'src' => $src,
+                'alt' => $alt ?: '❌ MISSING',
+                'hasAlt' => $has_alt,
+                'hasKeyword' => $has_keyword,
+                'isPlaceholder' => $is_placeholder
+            );
+        }
+        
+        // Generate status and hint
+        $status = 'Complete';
+        $hint = '✅ All images have alt text';
+        
+        if ($missing_alt > 0) {
+            $status = "Missing {$missing_alt}";
+            $hint = "❌ Add alt text to {$missing_alt} images";
+        } elseif ($with_keyword === 0 && !empty($keyword)) {
+            $hint = "⚠️ Add keyword to at least 1 image alt text";
+        } elseif ($with_keyword > 0) {
+            $hint = "✅ {$with_keyword} images have keyword in alt text";
+        }
+        
+        return array(
+            'total' => $total_images,
+            'missingAlt' => $missing_alt,
+            'withKeyword' => $with_keyword,
+            'details' => $details,
+            'status' => $status,
+            'hint' => $hint
+        );
+    }
+    
+    /**
+     * Analyze headings with keyword presence
+     */
+    private function analyze_headings_seo($content, $keyword) {
+        $headings = array();
+        $keyword_lower = strtolower(trim($keyword));
+        
+        for ($i = 1; $i <= 6; $i++) {
+            preg_match_all("/<h{$i}[^>]*>(.*?)<\/h{$i}>/is", $content, $matches);
+            foreach ($matches[1] as $text) {
+                $clean_text = html_entity_decode(strip_tags($text), ENT_QUOTES, 'UTF-8');
+                $clean_text = trim($clean_text);
+                if (empty($clean_text)) continue;
+                
+                $has_keyword = !empty($keyword) && stripos($clean_text, $keyword_lower) !== false;
+                $headings[] = array(
+                    'tag' => "H{$i}",
+                    'text' => substr($clean_text, 0, 80) . (strlen($clean_text) > 80 ? '...' : ''),
+                    'hasKeyword' => $has_keyword
+                );
+            }
+        }
+        
+        $h1_count = count(array_filter($headings, function($h) { return $h['tag'] === 'H1'; }));
+        $h2_count = count(array_filter($headings, function($h) { return $h['tag'] === 'H2'; }));
+        $with_keyword = count(array_filter($headings, function($h) { return $h['hasKeyword']; }));
+        
+        // Generate hints
+        $hints = array();
+        if ($h1_count === 0) {
+            $hints[] = '❌ Missing H1 tag';
+        } elseif ($h1_count > 1) {
+            $hints[] = '⚠️ Multiple H1 tags found';
+        } else {
+            $hints[] = '✅ Single H1 tag';
+        }
+        
+        if ($with_keyword === 0 && !empty($keyword)) {
+            $hints[] = '⚠️ Add keyword to headings';
+        } elseif ($with_keyword > 0) {
+            $hints[] = "✅ Keyword in {$with_keyword} headings";
+        }
+        
+        return array(
+            'headings' => $headings,
+            'total' => count($headings),
+            'h1Count' => $h1_count,
+            'h2Count' => $h2_count,
+            'withKeyword' => $with_keyword,
+            'hints' => $hints
+        );
+    }
+    
+    /**
+     * Detect FAQ section presence
+     */
+    private function detect_faq_section($html) {
+        // Check for FAQ heading
+        $has_faq_heading = preg_match('/<h[2-4][^>]*>.*?(FAQ|Frequently Asked|Common Questions).*?<\/h[2-4]>/is', $html);
+        
+        // Check for FAQ schema
+        $has_faq_schema = stripos($html, '"@type":"FAQPage"') !== false || 
+                          stripos($html, '"@type": "FAQPage"') !== false ||
+                          stripos($html, '"@type":"Question"') !== false;
+        
+        // Check for question-answer pattern (questions ending with ?)
+        preg_match_all('/<(h[3-5]|dt|strong)[^>]*>[^<]*\?[^<]*<\/(h[3-5]|dt|strong)>/is', $html, $qa_matches);
+        $question_count = count($qa_matches[0]);
+        
+        // Generate status and hint
+        if ($has_faq_schema) {
+            $status = 'schema_present';
+            $hint = '✅ FAQ Schema markup present';
+        } elseif ($has_faq_heading || $question_count >= 3) {
+            $status = 'content_present';
+            $hint = '⚠️ FAQ content found - add FAQ Schema for rich snippets';
+        } else {
+            $status = 'not_found';
+            $hint = '💡 Consider adding FAQ section for rich snippets';
+        }
+        
+        return array(
+            'hasFaqHeading' => $has_faq_heading > 0,
+            'hasFaqSchema' => $has_faq_schema,
+            'questionCount' => $question_count,
+            'status' => $status,
+            'hint' => $hint
+        );
+    }
+    
+    /**
+     * Detect HowTo content for schema opportunity
+     */
+    private function detect_howto_content($html) {
+        $has_howto_schema = stripos($html, '"@type":"HowTo"') !== false ||
+                           stripos($html, '"@type": "HowTo"') !== false;
+        
+        // Check for step-by-step content
+        $has_steps = preg_match('/step\s*[1-9]|step\s*one|first\s*step/i', $html);
+        $has_numbered_list = preg_match('/<ol[^>]*>.*?<li/is', $html);
+        $has_howto_heading = preg_match('/<h[1-4][^>]*>.*?(how\s*to|guide|tutorial|steps)/is', $html);
+        
+        if ($has_howto_schema) {
+            $hint = '✅ HowTo Schema present';
+        } elseif ($has_howto_heading && ($has_steps || $has_numbered_list)) {
+            $hint = '⚠️ HowTo content detected - add HowTo Schema';
+        } else {
+            $hint = null;
+        }
+        
+        return array(
+            'hasSchema' => $has_howto_schema,
+            'hasSteps' => $has_steps > 0,
+            'hasNumberedList' => $has_numbered_list > 0,
+            'hasHowtoHeading' => $has_howto_heading > 0,
+            'hint' => $hint
+        );
+    }
+    
+    /**
+     * Count links in content area only
+     */
+    private function count_content_links($content, $base_url) {
+        $domain = parse_url($base_url, PHP_URL_HOST);
+        
+        preg_match_all('/<a\s+[^>]*href=["\'](.*?)["\']/is', $content, $matches);
+        
+        $internal = 0;
+        $external = 0;
+        $internal_urls = array();
+        $external_urls = array();
+        
+        foreach ($matches[1] as $href) {
+            // Skip anchors, javascript, mailto, tel
+            if (strpos($href, '#') === 0 || 
+                strpos($href, 'javascript:') === 0 ||
+                strpos($href, 'mailto:') === 0 ||
+                strpos($href, 'tel:') === 0) {
+                continue;
+            }
+            
+            if (strpos($href, 'http') === 0) {
+                $href_domain = parse_url($href, PHP_URL_HOST);
+                if ($href_domain === $domain) {
+                    $internal++;
+                    $internal_urls[] = $href;
+                } else {
+                    $external++;
+                    $external_urls[] = $href;
+                }
+            } elseif (strpos($href, '/') === 0) {
+                // Relative URL starting with /
+                $internal++;
+                $internal_urls[] = $href;
+            }
+        }
+        
+        return array(
+            'internal' => $internal,
+            'external' => $external,
+            'total' => $internal + $external,
+            'internalUrls' => array_slice($internal_urls, 0, 10), // First 10
+            'externalUrls' => array_slice($external_urls, 0, 10)
+        );
+    }
+    
+    /**
+     * Calculate comprehensive SEO score
+     */
+    private function calculate_seo_score($analysis) {
+        $score = 0;
+        $breakdown = array();
+        
+        // Title (15 points)
+        $title_len = strlen($analysis['title'] ?? '');
+        if ($title_len >= 50 && $title_len <= 60) {
+            $score += 15;
+            $breakdown['title'] = array('score' => 15, 'max' => 15, 'status' => 'optimal');
+        } elseif ($title_len >= 30 && $title_len <= 70) {
+            $score += 10;
+            $breakdown['title'] = array('score' => 10, 'max' => 15, 'status' => 'good');
+        } elseif ($title_len > 0) {
+            $score += 5;
+            $breakdown['title'] = array('score' => 5, 'max' => 15, 'status' => 'needs_work');
+        } else {
+            $breakdown['title'] = array('score' => 0, 'max' => 15, 'status' => 'missing');
+        }
+        
+        // Meta Description (10 points)
+        $desc_len = strlen($analysis['description'] ?? '');
+        if ($desc_len >= 150 && $desc_len <= 160) {
+            $score += 10;
+            $breakdown['description'] = array('score' => 10, 'max' => 10, 'status' => 'optimal');
+        } elseif ($desc_len >= 100 && $desc_len <= 180) {
+            $score += 7;
+            $breakdown['description'] = array('score' => 7, 'max' => 10, 'status' => 'good');
+        } elseif ($desc_len > 0) {
+            $score += 3;
+            $breakdown['description'] = array('score' => 3, 'max' => 10, 'status' => 'needs_work');
+        } else {
+            $breakdown['description'] = array('score' => 0, 'max' => 10, 'status' => 'missing');
+        }
+        
+        // H1 Tag (15 points)
+        $h1_count = $analysis['headingAnalysis']['h1Count'] ?? 0;
+        $headings_with_keyword = $analysis['headingAnalysis']['withKeyword'] ?? 0;
+        if ($h1_count === 1) {
+            $score += 10;
+            if ($headings_with_keyword > 0) {
+                $score += 5;
+                $breakdown['h1'] = array('score' => 15, 'max' => 15, 'status' => 'optimal');
+            } else {
+                $breakdown['h1'] = array('score' => 10, 'max' => 15, 'status' => 'good');
+            }
+        } elseif ($h1_count > 1) {
+            $score += 5;
+            $breakdown['h1'] = array('score' => 5, 'max' => 15, 'status' => 'multiple');
+        } else {
+            $breakdown['h1'] = array('score' => 0, 'max' => 15, 'status' => 'missing');
+        }
+        
+        // Keyword Density (15 points)
+        $density = $analysis['keywordAnalysis']['densityValue'] ?? 0;
+        if ($density >= 0.8 && $density <= 2.5) {
+            $score += 15;
+            $breakdown['keywordDensity'] = array('score' => 15, 'max' => 15, 'status' => 'optimal');
+        } elseif ($density >= 0.5 && $density <= 3) {
+            $score += 10;
+            $breakdown['keywordDensity'] = array('score' => 10, 'max' => 15, 'status' => 'good');
+        } elseif ($density > 0) {
+            $score += 5;
+            $breakdown['keywordDensity'] = array('score' => 5, 'max' => 15, 'status' => 'needs_work');
+        } else {
+            $breakdown['keywordDensity'] = array('score' => 0, 'max' => 15, 'status' => 'missing');
+        }
+        
+        // Opening Paragraph (10 points)
+        $keyword_in_opening = $analysis['openingParagraph']['found'] ?? false;
+        if ($keyword_in_opening) {
+            $score += 10;
+            $breakdown['openingParagraph'] = array('score' => 10, 'max' => 10, 'status' => 'present');
+        } else {
+            $breakdown['openingParagraph'] = array('score' => 0, 'max' => 10, 'status' => 'missing');
+        }
+        
+        // Image Alt Text (10 points)
+        $missing_alt = $analysis['imageAnalysis']['missingAlt'] ?? 0;
+        $images_with_keyword = $analysis['imageAnalysis']['withKeyword'] ?? 0;
+        $total_images = $analysis['imageAnalysis']['total'] ?? 0;
+        
+        if ($total_images === 0) {
+            $score += 3; // Some points for no images (not penalized heavily)
+            $breakdown['images'] = array('score' => 3, 'max' => 10, 'status' => 'no_images');
+        } elseif ($missing_alt === 0 && $images_with_keyword > 0) {
+            $score += 10;
+            $breakdown['images'] = array('score' => 10, 'max' => 10, 'status' => 'optimal');
+        } elseif ($missing_alt === 0) {
+            $score += 7;
+            $breakdown['images'] = array('score' => 7, 'max' => 10, 'status' => 'good');
+        } elseif ($missing_alt < $total_images) {
+            $score += 3;
+            $breakdown['images'] = array('score' => 3, 'max' => 10, 'status' => 'needs_work');
+        } else {
+            $breakdown['images'] = array('score' => 0, 'max' => 10, 'status' => 'missing');
+        }
+        
+        // Internal Links (5 points)
+        $internal = $analysis['contentLinks']['internal'] ?? 0;
+        if ($internal >= 3 && $internal <= 15) {
+            $score += 5;
+            $breakdown['internalLinks'] = array('score' => 5, 'max' => 5, 'status' => 'optimal');
+        } elseif ($internal > 0) {
+            $score += 3;
+            $breakdown['internalLinks'] = array('score' => 3, 'max' => 5, 'status' => 'good');
+        } else {
+            $breakdown['internalLinks'] = array('score' => 0, 'max' => 5, 'status' => 'missing');
+        }
+        
+        // External Links (5 points)
+        $external = $analysis['contentLinks']['external'] ?? 0;
+        if ($external >= 1 && $external <= 5) {
+            $score += 5;
+            $breakdown['externalLinks'] = array('score' => 5, 'max' => 5, 'status' => 'optimal');
+        } elseif ($external > 0) {
+            $score += 3;
+            $breakdown['externalLinks'] = array('score' => 3, 'max' => 5, 'status' => 'good');
+        } else {
+            $breakdown['externalLinks'] = array('score' => 0, 'max' => 5, 'status' => 'missing');
+        }
+        
+        // Content Length (5 points)
+        $words = $analysis['keywordAnalysis']['words'] ?? 0;
+        if ($words >= 800) {
+            $score += 5;
+            $breakdown['contentLength'] = array('score' => 5, 'max' => 5, 'status' => 'optimal');
+        } elseif ($words >= 500) {
+            $score += 3;
+            $breakdown['contentLength'] = array('score' => 3, 'max' => 5, 'status' => 'good');
+        } elseif ($words >= 300) {
+            $score += 1;
+            $breakdown['contentLength'] = array('score' => 1, 'max' => 5, 'status' => 'needs_work');
+        } else {
+            $breakdown['contentLength'] = array('score' => 0, 'max' => 5, 'status' => 'short');
+        }
+        
+        // Schema/FAQ (5 points)
+        $has_faq = $analysis['faqAnalysis']['hasFaqSchema'] ?? false;
+        $has_schema = isset($analysis['technicalSeo']['schema']);
+        if ($has_faq) {
+            $score += 5;
+            $breakdown['schema'] = array('score' => 5, 'max' => 5, 'status' => 'faq_present');
+        } elseif ($has_schema) {
+            $score += 3;
+            $breakdown['schema'] = array('score' => 3, 'max' => 5, 'status' => 'schema_present');
+        } else {
+            $breakdown['schema'] = array('score' => 0, 'max' => 5, 'status' => 'missing');
+        }
+        
+        // Canonical (5 points)
+        $has_canonical = !empty($analysis['technicalSeo']['canonical'] ?? '');
+        if ($has_canonical) {
+            $score += 5;
+            $breakdown['canonical'] = array('score' => 5, 'max' => 5, 'status' => 'present');
+        } else {
+            $breakdown['canonical'] = array('score' => 0, 'max' => 5, 'status' => 'missing');
+        }
+        
+        return array(
+            'score' => $score,
+            'maxScore' => 100,
+            'percentage' => $score,
+            'grade' => $this->get_seo_grade($score),
+            'breakdown' => $breakdown
+        );
+    }
+    
+    /**
+     * Get SEO grade based on score
+     */
+    private function get_seo_grade($score) {
+        if ($score >= 90) return 'A+';
+        if ($score >= 80) return 'A';
+        if ($score >= 70) return 'B';
+        if ($score >= 60) return 'C';
+        if ($score >= 50) return 'D';
+        return 'F';
+    }
+    
+    /**
+     * ========================================
+     * END ENHANCED SEO AUDIT FUNCTIONS
+     * ========================================
+     */
+    
+    /**
+     * Comprehensive SEO Analysis - Enhanced with forensic audit capabilities
+     */
+    private function analyze_seo($html, $url, $post_id = 0) {
+        // Extract basic info first
+        $title = $this->extract_title($html, $post_id);
+        $description = $this->extract_meta_description($html);
+        $keyword = $this->extract_rankmath_keyword($html, $post_id);
+        
+        // ========================================
+        // ENHANCED: Extract content area for accurate analysis
+        // ========================================
+        $content_area = $this->extract_content_area($html);
+        
+        // ========================================
+        // ENHANCED: Keyword density analysis
+        // ========================================
+        $keyword_analysis = $this->calculate_keyword_density($content_area, $keyword);
+        
+        // ========================================
+        // ENHANCED: Opening paragraph keyword check
+        // ========================================
+        $opening_paragraph = $this->check_opening_paragraph($content_area, $keyword);
+        
+        // ========================================
+        // ENHANCED: Image SEO analysis with keyword checking
+        // ========================================
+        $image_analysis = $this->analyze_images_seo($content_area, $keyword);
+        
+        // ========================================
+        // ENHANCED: Heading analysis with keyword presence
+        // ========================================
+        $heading_analysis = $this->analyze_headings_seo($content_area, $keyword);
+        
+        // ========================================
+        // ENHANCED: Content-only link counting
+        // ========================================
+        $content_links = $this->count_content_links($content_area, $url);
+        
+        // ========================================
+        // ENHANCED: FAQ section detection
+        // ========================================
+        $faq_analysis = $this->detect_faq_section($html);
+        
+        // ========================================
+        // ENHANCED: HowTo content detection
+        // ========================================
+        $howto_analysis = $this->detect_howto_content($html);
+        
+        // Build initial analysis array
+        $analysis = array(
+            'title' => $title,
+            'description' => $description,
+            'focusKeyword' => $keyword,
+            'rankMathScore' => $this->extract_rankmath_score($html, $post_id),
+            // Use content-only link counts (more accurate)
+            'internalLinks' => (string)$content_links['internal'],
+            'externalLinks' => (string)$content_links['external'],
+            'altImages' => $image_analysis['status'],
+            'seoHints' => array(),
+            'technicalSeo' => array(),
+            // NEW: Enhanced analysis data
+            'keywordAnalysis' => $keyword_analysis,
+            'openingParagraph' => $opening_paragraph,
+            'imageAnalysis' => $image_analysis,
+            'headingAnalysis' => $heading_analysis,
+            'contentLinks' => $content_links,
+            'faqAnalysis' => $faq_analysis,
+            'howtoAnalysis' => $howto_analysis,
+        );
+        
+        // Build header hierarchy info from enhanced analysis
         $header_counts = array();
+        $h1_count = $heading_analysis['h1Count'];
+        $h2_count = $heading_analysis['h2Count'];
+        
         if ($h1_count > 0) $header_counts[] = "H1:{$h1_count}";
         if ($h2_count > 0) $header_counts[] = "H2:{$h2_count}";
+        
+        // Count other headings
+        $h3_count = count(array_filter($heading_analysis['headings'], function($h) { return $h['tag'] === 'H3'; }));
+        $h4_count = count(array_filter($heading_analysis['headings'], function($h) { return $h['tag'] === 'H4'; }));
+        $h5_count = count(array_filter($heading_analysis['headings'], function($h) { return $h['tag'] === 'H5'; }));
+        $h6_count = count(array_filter($heading_analysis['headings'], function($h) { return $h['tag'] === 'H6'; }));
+        
         if ($h3_count > 0) $header_counts[] = "H3:{$h3_count}";
         if ($h4_count > 0) $header_counts[] = "H4:{$h4_count}";
         if ($h5_count > 0) $header_counts[] = "H5:{$h5_count}";
         if ($h6_count > 0) $header_counts[] = "H6:{$h6_count}";
         
+        // Extract H1 text
+        $h1_text = '';
+        foreach ($heading_analysis['headings'] as $h) {
+            if ($h['tag'] === 'H1') {
+                $h1_text = $h['text'];
+                break;
+            }
+        }
+        
         $analysis['technicalSeo']['headers'] = implode(' → ', $header_counts);
         $analysis['technicalSeo']['h1Text'] = $h1_text;
+        $analysis['technicalSeo']['wordCount'] = $keyword_analysis['words'];
         
-        if ($h1_count === 0) {
-            $analysis['seoHints'][] = '❌ Missing H1 tag';
-        } elseif ($h1_count > 1) {
-            $analysis['seoHints'][] = '⚠️ Multiple H1 tags found';
-        } else {
-            $analysis['seoHints'][] = '✅ H1 tag structure good';
+        // ========================================
+        // SEO HINTS - Enhanced with new analysis
+        // ========================================
+        
+        // Heading hints
+        foreach ($heading_analysis['hints'] as $hint) {
+            $analysis['seoHints'][] = $hint;
+        }
+        
+        // Keyword density hints
+        if ($keyword_analysis['status'] === 'missing' && !empty($keyword)) {
+            $analysis['seoHints'][] = "❌ Keyword \"{$keyword}\" not found in content";
+        } elseif ($keyword_analysis['status'] === 'low') {
+            $analysis['seoHints'][] = "⚠️ Keyword density low ({$keyword_analysis['density']}) - aim for 0.8-2.5%";
+        } elseif ($keyword_analysis['status'] === 'high') {
+            $analysis['seoHints'][] = "⚠️ Keyword density high ({$keyword_analysis['density']}) - reduce to avoid stuffing";
+        } elseif ($keyword_analysis['status'] === 'good') {
+            $analysis['seoHints'][] = "✅ Keyword density optimal ({$keyword_analysis['density']})";
+        }
+        
+        // Opening paragraph hint
+        $analysis['seoHints'][] = $opening_paragraph['hint'];
+        
+        // Image hints
+        $analysis['seoHints'][] = $image_analysis['hint'];
+        
+        // FAQ hint
+        $analysis['seoHints'][] = $faq_analysis['hint'];
+        
+        // HowTo hint (if applicable)
+        if (!empty($howto_analysis['hint'])) {
+            $analysis['seoHints'][] = $howto_analysis['hint'];
         }
         
         // Canonical URL Check
@@ -1750,6 +2436,11 @@ class SEO_Page_Monitor {
         
         // Generate personalized SEO recommendations
         $analysis['recommendations'] = $this->generate_seo_recommendations($analysis, $html, $url);
+        
+        // ========================================
+        // ENHANCED: Calculate comprehensive SEO score
+        // ========================================
+        $analysis['seoScore'] = $this->calculate_seo_score($analysis);
         
         return $analysis;
     }
